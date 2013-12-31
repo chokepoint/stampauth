@@ -10,7 +10,7 @@ in /etc/passwd (555-555-5555). Default format has office phone number
 as the third option. Can be set with usermod <user> -c ',,555-555-5555,'"""
 
 import random, string, hashlib, requests
-import pwd
+import pwd, syslog
 
 class InvalidNumber(Exception):
 	"""Raised if an invalid phone number is passed to the class"""
@@ -45,6 +45,12 @@ class TextDrop:
 		if "Invalid mobile number" in resp.content:
 			raise InvalidNumber(self.phone_num)
 
+def auth_log(msg):
+	"""Send errors to default auth log"""
+	syslog.openlog(facility=syslog.LOG_AUTH)
+	syslog.syslog("STAMP: " + msg)
+	syslog.closelog()
+
 def get_hash(plain_text):
 	"""return sha512 digest of given plain text"""
 	key_hash = hashlib.sha512()
@@ -57,11 +63,13 @@ def get_user_number(user):
 	try:
 		comments = pwd.getpwnam(user).pw_gecos
 	except KeyError: # Bad user name
+		auth_log("No local user (%s) found." % user)
 		return -1
 	
 	try:
 		return comments.split(',')[2] # Return Office Phone
 	except IndexError: # Bad comment section format
+		auth_log("Invalid comment block. Phone number must be listed as Office Phone")
 		return -1
 		
 def gen_key(user_number, length):
@@ -71,7 +79,11 @@ def gen_key(user_number, length):
 	try:
 		sms.send_text()
 	except:
-		raise
+		if not user_number:
+			auth_log("No phone number listed for this user.")
+		else:
+			auth_log("Error sending PIN to the given SMS number. (%s)" % (user_number))
+		return -1
 		
 	return get_hash(pin)
 	
