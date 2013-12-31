@@ -69,10 +69,10 @@ def get_user_number(user):
 	try:
 		return comments.split(',')[2] # Return Office Phone
 	except IndexError: # Bad comment section format
-		auth_log("Invalid comment block. Phone number must be listed as Office Phone")
+		auth_log("Invalid comment block for user %s. Phone number must be listed as Office Phone" % (user))
 		return -1
 		
-def gen_key(user_number, length):
+def gen_key(user, user_number, length):
 	"""Generate the key and send text to the user's phone"""
 	pin = ''.join(random.choice(string.digits) for i in range(length))
 	sms = TextDrop(pin, user_number)
@@ -80,7 +80,7 @@ def gen_key(user_number, length):
 		sms.send_text()
 	except:
 		if not user_number:
-			auth_log("No phone number listed for this user.")
+			auth_log("No phone number listed for user (%s)." % (user))
 		else:
 			auth_log("Error sending PIN to the given SMS number. (%s)" % (user_number))
 		return -1
@@ -94,11 +94,18 @@ def pam_sm_authenticate(pamh, flags, argv):
 		user_number = get_user_number(user)
 	except pamh.exception, e:
 		return e.pam_result
-	if user is None or user_number == -1:
-		return pamh.PAM_USER_UNKNOWN
-		
-	pin = gen_key(user_number, PIN_LENGTH)
 	
+	if user is None or user_number == -1:
+		msg = pamh.Message(pamh.PAM_ERROR_MSG, "Unable to send one time PIN.\nPlease contact your System Administrator")
+		pamh.conversation(msg)
+		return pamh.PAM_ABORT
+		
+	pin = gen_key(user, user_number, PIN_LENGTH)
+	if pin == -1: # One time PIN could not be generated
+		msg = pamh.Message(pamh.PAM_ERROR_MSG, "Unable to send one time PIN.\nPlease contact your System Administrator")
+		pamh.conversation(msg)
+		return pamh.PAM_ABORT
+		
 	for attempt in range(0,3): # 3 attempts to enter the one time PIN
 		msg = pamh.Message(pamh.PAM_PROMPT_ECHO_OFF, "Enter one time PIN: ")
 		resp = pamh.conversation(msg)
